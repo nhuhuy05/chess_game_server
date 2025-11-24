@@ -96,7 +96,11 @@ export const signIn = async (req, res) => {
     //trả access token về res
     return res
       .status(200)
-      .json({ massage: `User ${user.display_name} đã đăng nhập` , accessToken, refreshToken});
+      .json({
+        massage: `User ${user.display_name} đã đăng nhập`,
+        accessToken,
+        refreshToken,
+      });
   } catch (error) {
     console.error("Lỗi khi gọi signIn: ", error.message);
     return res.status(500).json({ message: "Lỗi hệ thống" });
@@ -104,5 +108,20 @@ export const signIn = async (req, res) => {
 };
 
 export const signOut = async (req, res) => {
+  try {
 
+    //lấy refreshToken
+    const token = req.refreshToken;
+
+    //xóa refreshToken 
+    if(token){
+      await Token.delete({refreshToken: token});
+    }
+
+    return res.sendStatus(204);
+
+  } catch (error) {
+    console.error("Lỗi khi gọi signOut: ", error.message);
+    return res.status(500).json({ message: "Lỗi hệ thống" });
+  }
 };
