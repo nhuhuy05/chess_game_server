@@ -100,6 +100,8 @@ export const signIn = async (req, res) => {
         massage: `User ${user.display_name} đã đăng nhập`,
         accessToken,
         refreshToken,
+        userId: user.id,
+        displayName: user.display_name
       });
   } catch (error) {
     console.error("Lỗi khi gọi signIn: ", error.message);

@@ -1,6 +1,8 @@
 import express from 'express';
 import dotenv from 'dotenv';  
 import authRoute from './routes/authRoute.js'
+import gameRoute from './routes/gameRoute.js'
+import { protectedRoute } from './middlewares/authMiddleware.js';
 
 dotenv.config();
 
@@ -14,6 +16,8 @@ app.use(express.json());
 app.use('/api/auth', authRoute)
 
 //private routes
+app.use(protectedRoute);
+app.use('/api/matchmaking', gameRoute)
 
 
 app.listen(PORT, () => {
