@@ -19,7 +19,7 @@ export const protectedRoute = (req, res, next) => {
           console.error(err);
           return res
             .status(403)
-            .json({ massage: "accesstoken hết hạn hoặc ko đúng" });
+            .json({ massage: "accessToken hết hạn hoặc ko đúng" });
         }
         //tìm user
         const user = await User.findById(decodedUser.userId);
@@ -29,7 +29,6 @@ export const protectedRoute = (req, res, next) => {
         // trả về user trong req
         req.user = user;
         next();
-        console.log(user);
       }
     );
   } catch (error) {

@@ -1,7 +1,7 @@
 import db from "../config/db.js";
 
 export default class Game {
-  static async create({ player_white_id, player_black_id, mode }) {
+  static async create({ player_white_id, player_black_id, mode = "p2p_random" }) {
     const [result] = await db
       .promise()
       .query(
@@ -36,5 +36,15 @@ export default class Game {
 
   static async delete(id) {
     await db.promise().query("DELETE FROM games WHERE id=?", [id]);
+  }
+
+  static async findPendingGameForUser(userId) {
+    const [rows] = await db
+      .promise()
+      .query(
+        "SELECT * FROM games WHERE status='waiting' AND (player_white_id=? OR player_black_id=?) ORDER BY id DESC LIMIT 1",
+        [userId, userId]
+      );
+    return rows[0];
   }
 }

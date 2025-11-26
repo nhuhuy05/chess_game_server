@@ -1,16 +1,32 @@
-import User from "../models/User.js"; // Để lấy thông tin người chơi
-import Game from "../models/Game.js"; // Giả định bạn có Game Model
+import User from "../models/User.js";
+import Game from "../models/Game.js";
 
-// Key: userId, Value: { id: userId, socketId: '...', ...} (chỉ dùng userId trong REST)
+// Hàng đợi ghép trận trong bộ nhớ
+// Key: userId, Value: thông tin cơ bản của người chơi (kèm IP/port để P2P)
 const matchmakingQueue = new Map();
 
-export const joinMatchmaking = async (req, res) => {
-  // Giả định req.userId được lấy từ JWT trong middleware Auth
+// Lưu tạm thông tin P2P sau khi đã ghép để client khác (người vào hàng đợi trước)
+// có thể lấy qua /status. Key: userId, Value: { gameId, color, opponent: { ... } }
+const p2pInfoByUser = new Map();
 
-  const userId = req.user.id;
+// POST /api/matchmaking/join
+export const joinMatchmaking = async (req, res) => {
+  const userId = req.user?.id;
+  const socketPort = req.body?.socketPort;
+  const ip =
+    req.headers["x-forwarded-for"] ||
+    req.socket?.remoteAddress ||
+    req.ip ||
+    null;
 
   if (!userId) {
     return res.status(401).json({ message: "Chưa xác thực" });
+  }
+
+  if (!socketPort || Number.isNaN(Number(socketPort))) {
+    return res
+      .status(400)
+      .json({ message: "Thiếu hoặc sai socketPort để thiết lập P2P" });
   }
 
   try {
@@ -19,133 +35,152 @@ export const joinMatchmaking = async (req, res) => {
       return res.status(404).json({ message: "Người dùng không tồn tại" });
     }
 
-    // 1. Nếu người dùng đã trong hàng đợi, trả về trạng thái đang chờ
+    // Nếu đã trong hàng đợi thì chỉ báo vẫn đang chờ
     if (matchmakingQueue.has(userId)) {
-      // Mặc dù đã có, vẫn trả về 202 để Client biết vẫn đang chờ
       return res.status(202).json({ message: "Đang tìm trận đấu..." });
     }
 
-    // 2. Thêm người dùng vào hàng đợi
+    // Thêm người chơi vào hàng đợi
     const player = {
       id: userId,
       username: user.username,
       display_name: user.display_name,
+      ip,
+      port: Number(socketPort),
     };
     matchmakingQueue.set(userId, player);
     console.log(
       `User ${user.username} joined queue. Size: ${matchmakingQueue.size}`
     );
 
-    // 3. Kiểm tra ghép đôi
-    if (matchmakingQueue.size >= 2) {
-      // Lấy 2 người chơi đầu tiên
-      const [player1Id, player1] = matchmakingQueue.entries().next().value;
-      matchmakingQueue.delete(player1Id);
-
-      // Lấy người chơi thứ 2 (là người vừa gửi request)
-      const player2Id = userId; // Đã có sẵn userId
-      const player2 = matchmakingQueue.get(player2Id);
-      matchmakingQueue.delete(player2Id);
-
-      // 4. Tạo Game mới trong DB
-      const [whitePlayer, blackPlayer] =
-        Math.random() < 0.5 ? [player1, player2] : [player2, player1];
-
-      const newGame = await Game.create({
-        player_white_id: whitePlayer.id,
-        player_black_id: blackPlayer.id,
-        // ... các thông số game
-      });
-
-      // 5. Trả về thông tin trận đấu cho người chơi vừa gửi request (player2)
-      const opponent =
-        player2.id === whitePlayer.id ? blackPlayer : whitePlayer;
-      const color = player2.id === whitePlayer.id ? "white" : "black";
-
-      return res.status(200).json({
-        message: "Match Found!",
-        gameId: newGame.id,
-        opponent: {
-          id: opponent.id,
-          username: opponent.username,
-          display_name: opponent.display_name,
-        },
-        color: color,
-        // Client cần biết ai là White/Black và Game ID để bắt đầu P2P
-      });
-    } else {
-      // Vẫn còn ít hơn 2 người trong hàng đợi
+    // Nếu chưa đủ 2 người thì tiếp tục chờ
+    if (matchmakingQueue.size < 2) {
       return res.status(202).json({ message: "Đang tìm trận đấu..." });
     }
+
+    // Lấy 2 người chơi đầu tiên trong hàng đợi (ghép ngẫu nhiên màu cờ)
+    const iterator = matchmakingQueue.entries();
+    const first = iterator.next().value;
+    const second = iterator.next().value;
+
+    if (!first || !second) {
+      // Trường hợp hiếm khi một người rời hàng đợi giữa lúc xử lý
+      return res
+        .status(202)
+        .json({ message: "Đang tìm trận đấu...", note: "Chờ thêm người chơi" });
+    }
+
+    const [player1Id, player1] = first;
+    const [player2Id, player2] = second;
+
+    matchmakingQueue.delete(player1Id);
+    matchmakingQueue.delete(player2Id);
+
+    const [whitePlayer, blackPlayer] =
+      Math.random() < 0.5 ? [player1, player2] : [player2, player1];
+
+    // Tạo bản ghi game trong DB, mode cố định 'p2p_random'
+    const newGame = await Game.create({
+      player_white_id: whitePlayer.id,
+      player_black_id: blackPlayer.id,
+      mode: "p2p_random",
+    });
+
+    // Lưu thông tin P2P cho cả hai người chơi để client có thể lấy qua /status
+    p2pInfoByUser.set(whitePlayer.id, {
+      gameId: newGame.id,
+      color: "white",
+      opponent: {
+        id: blackPlayer.id,
+        username: blackPlayer.username,
+        display_name: blackPlayer.display_name,
+        ip: blackPlayer.ip,
+        port: blackPlayer.port,
+      },
+    });
+
+    p2pInfoByUser.set(blackPlayer.id, {
+      gameId: newGame.id,
+      color: "black",
+      opponent: {
+        id: whitePlayer.id,
+        username: whitePlayer.username,
+        display_name: whitePlayer.display_name,
+        ip: whitePlayer.ip,
+        port: whitePlayer.port,
+      },
+    });
+
+    // Xác định người gọi API là bên nào để trả về màu + P2P đúng
+    const selfInfo = p2pInfoByUser.get(userId);
+
+    return res.status(200).json({
+      message: "Match Found!",
+      gameId: selfInfo.gameId,
+      opponent: selfInfo.opponent,
+      color: selfInfo.color,
+    });
   } catch (error) {
-    console.error("Lỗi khi tham gia ghép đôi:", error.message);
-    // Đảm bảo người dùng bị lỗi được xóa khỏi queue để tránh kẹt
+    console.error("Lỗi khi tham gia ghép đôi:", error);
     matchmakingQueue.delete(userId);
     return res.status(500).json({ message: "Lỗi hệ thống khi tìm trận đấu" });
   }
 };
 
+// GET /api/matchmaking/status
 export const checkMatchStatus = async (req, res) => {
-  const userId = req.userId;
+  const userId = req.user?.id;
 
   if (!userId) {
     return res.status(401).json({ message: "Chưa xác thực" });
   }
 
   try {
-    // 1. Kiểm tra xem người dùng đã có Game nào đang chờ họ chưa
-    // Giả định Game Model có hàm findPendingGameForUser
-    const pendingGame = await Game.findPendingGameForUser(userId);
-
-    if (pendingGame) {
-      // 2. Nếu tìm thấy Game, trả về thông tin
-      const isWhite = pendingGame.player_white_id === userId;
-      const opponentId = isWhite
-        ? pendingGame.player_black_id
-        : pendingGame.player_white_id;
-      const opponent = await User.findById(opponentId);
+    // Nếu đã có thông tin P2P được lưu sẵn (đã ghép xong)
+    if (p2pInfoByUser.has(userId)) {
+      const info = p2pInfoByUser.get(userId);
+      // Có thể xóa sau khi client đã lấy để tránh rò rỉ bộ nhớ
+      p2pInfoByUser.delete(userId);
 
       return res.status(200).json({
         message: "Match Found!",
-        gameId: pendingGame.id,
-        opponent: {
-          id: opponent.id,
-          username: opponent.username,
-          display_name: opponent.display_name,
-        },
-        color: isWhite ? "white" : "black",
+        gameId: info.gameId,
+        opponent: info.opponent,
+        color: info.color,
       });
-    } else if (matchmakingQueue.has(userId)) {
-      // 3. Nếu không có Game nào được tạo và vẫn còn trong hàng đợi
-      return res.status(202).json({ message: "Đang tìm trận đấu..." });
-    } else {
-      // 4. Nếu không có Game nào và không còn trong hàng đợi (đã thoát/hết phiên)
-      return res
-        .status(404)
-        .json({ message: "Không tìm thấy yêu cầu tìm trận đấu" });
     }
+
+    // Chưa ghép xong nhưng vẫn đang trong hàng đợi
+    if (matchmakingQueue.has(userId)) {
+      return res.status(202).json({ message: "Đang tìm trận đấu..." });
+    }
+
+    // Không có trong hàng đợi và cũng không có thông tin P2P
+    return res
+      .status(404)
+      .json({ message: "Không tìm thấy yêu cầu tìm trận đấu" });
   } catch (error) {
-    console.error("Lỗi khi kiểm tra trạng thái:", error.message);
+    console.error("Lỗi khi kiểm tra trạng thái:", error);
     return res.status(500).json({ message: "Lỗi hệ thống" });
   }
 };
 
+// DELETE /api/matchmaking/leave
 export const leaveMatchmaking = (req, res) => {
-  const userId = req.userId;
+  const userId = req.user?.id;
 
   if (!userId) {
     return res.status(401).json({ message: "Chưa xác thực" });
   }
 
-  // Xóa khỏi hàng đợi trong bộ nhớ
   const removed = matchmakingQueue.delete(userId);
 
   if (removed) {
     console.log(`User ${userId} left queue. Size: ${matchmakingQueue.size}`);
-    return res.sendStatus(204); // Xóa thành công, không nội dung
-  } else {
-    return res
-      .status(404)
-      .json({ message: "Người dùng không có trong hàng đợi" });
+    return res.sendStatus(204);
   }
+
+  return res
+    .status(404)
+    .json({ message: "Người dùng không có trong hàng đợi" });
 };
