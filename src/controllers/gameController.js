@@ -1,5 +1,6 @@
 import User from "../models/User.js";
 import Game from "../models/Game.js";
+import Ranking from "../models/Ranking.js";
 
 // Hàng đợi ghép trận trong bộ nhớ
 // Key: userId, Value: thông tin cơ bản của người chơi (kèm IP/port để P2P)
@@ -86,6 +87,19 @@ export const joinMatchmaking = async (req, res) => {
       mode: "p2p_random",
     });
 
+    // Lấy rating cho cả hai người chơi
+    let whiteRanking = await Ranking.findByUserId(whitePlayer.id);
+    if (!whiteRanking) {
+      await Ranking.create(whitePlayer.id);
+      whiteRanking = await Ranking.findByUserId(whitePlayer.id);
+    }
+
+    let blackRanking = await Ranking.findByUserId(blackPlayer.id);
+    if (!blackRanking) {
+      await Ranking.create(blackPlayer.id);
+      blackRanking = await Ranking.findByUserId(blackPlayer.id);
+    }
+
     // Lưu thông tin P2P cho cả hai người chơi để client có thể lấy qua /status
     p2pInfoByUser.set(whitePlayer.id, {
       gameId: newGame.id,
@@ -96,7 +110,9 @@ export const joinMatchmaking = async (req, res) => {
         display_name: blackPlayer.display_name,
         ip: blackPlayer.ip,
         port: blackPlayer.port,
+        rating: blackRanking?.score || 0,
       },
+      playerRating: whiteRanking?.score || 0,
     });
 
     p2pInfoByUser.set(blackPlayer.id, {
@@ -108,7 +124,9 @@ export const joinMatchmaking = async (req, res) => {
         display_name: whitePlayer.display_name,
         ip: whitePlayer.ip,
         port: whitePlayer.port,
+        rating: whiteRanking?.score || 0,
       },
+      playerRating: blackRanking?.score || 0,
     });
 
     // Xác định người gọi API là bên nào để trả về màu + P2P đúng
@@ -119,6 +137,7 @@ export const joinMatchmaking = async (req, res) => {
       gameId: selfInfo.gameId,
       opponent: selfInfo.opponent,
       color: selfInfo.color,
+      playerRating: selfInfo.playerRating,
     });
   } catch (error) {
     console.error("Lỗi khi tham gia ghép đôi:", error);
@@ -147,6 +166,7 @@ export const checkMatchStatus = async (req, res) => {
         gameId: info.gameId,
         opponent: info.opponent,
         color: info.color,
+        playerRating: info.playerRating,
       });
     }
 
@@ -183,4 +203,85 @@ export const leaveMatchmaking = (req, res) => {
   return res
     .status(404)
     .json({ message: "Người dùng không có trong hàng đợi" });
+};
+
+// POST /api/games/:gameId/end
+export const endGame = async (req, res) => {
+  const userId = req.user?.id;
+  const gameId = req.params.gameId;
+
+  if (!userId) {
+    return res.status(401).json({ message: "Chưa xác thực" });
+  }
+
+  try {
+    const game = await Game.findById(gameId);
+    if (!game) {
+      return res.status(404).json({ message: "Trận đấu không tồn tại" });
+    }
+
+    // Kiểm tra người chơi có tham gia trận đấu này không
+    if (game.player_white_id !== userId && game.player_black_id !== userId) {
+      return res
+        .status(403)
+        .json({ message: "Bạn không tham gia trận đấu này" });
+    }
+
+    // Kiểm tra trận đấu đã kết thúc chưa
+    if (game.status === "finished") {
+      return res.status(400).json({ message: "Trận đấu đã kết thúc" });
+    }
+
+    const { winnerColor, result } = req.body;
+
+    // Xác định kết quả
+    let winnerId = null;
+    let whiteResult = "draw";
+    let blackResult = "draw";
+
+    if (result === "draw") {
+      // Hòa
+      whiteResult = "draw";
+      blackResult = "draw";
+    } else if (winnerColor === "white") {
+      winnerId = game.player_white_id;
+      whiteResult = "win";
+      blackResult = "loss";
+    } else if (winnerColor === "black") {
+      winnerId = game.player_black_id;
+      whiteResult = "loss";
+      blackResult = "win";
+    }
+
+    // Cập nhật game
+    if (winnerId) {
+      await Game.setWinner(gameId, winnerId);
+    } else {
+      await Game.updateStatus(gameId, "finished");
+    }
+
+    // Cập nhật ranking cho cả hai người chơi
+    // Đảm bảo ranking tồn tại
+    let whiteRanking = await Ranking.findByUserId(game.player_white_id);
+    if (!whiteRanking) {
+      await Ranking.create(game.player_white_id);
+    }
+    await Ranking.updateAfterGame(game.player_white_id, whiteResult);
+
+    let blackRanking = await Ranking.findByUserId(game.player_black_id);
+    if (!blackRanking) {
+      await Ranking.create(game.player_black_id);
+    }
+    await Ranking.updateAfterGame(game.player_black_id, blackResult);
+
+    return res.status(200).json({
+      message: "Trận đấu đã được cập nhật",
+      gameId: gameId,
+      winnerId: winnerId,
+      result: result || (winnerId ? "win" : "draw"),
+    });
+  } catch (error) {
+    console.error("Lỗi khi kết thúc trận đấu:", error);
+    return res.status(500).json({ message: "Lỗi hệ thống" });
+  }
 };
