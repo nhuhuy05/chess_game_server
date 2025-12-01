@@ -44,7 +44,8 @@ npm install
 
 ### 3. Cấu hình database
 
-Tạo database MySQL với tên `chess_db` (hoặc tên khác tùy chỉnh trong file config).
+- Tạo database MySQL với tên `chess_db` (hoặc tên khác tùy chỉnh trong file config).
+- Import file `database/schema.sql` để khởi tạo đầy đủ các bảng (`users`, `tokens`, `friendships`, `games`, `rankings`).
 
 ### 4. Cấu hình biến môi trường
 

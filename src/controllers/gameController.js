@@ -80,11 +80,11 @@ export const joinMatchmaking = async (req, res) => {
     const [whitePlayer, blackPlayer] =
       Math.random() < 0.5 ? [player1, player2] : [player2, player1];
 
-    // Tạo bản ghi game trong DB, mode cố định 'p2p_random'
+    // Tạo bản ghi game trong DB, mode cố định 'random'
     const newGame = await Game.create({
       player_white_id: whitePlayer.id,
       player_black_id: blackPlayer.id,
-      mode: "p2p_random",
+      mode: "random",
     });
 
     // Lấy rating cho cả hai người chơi

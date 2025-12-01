@@ -1,14 +1,30 @@
 import db from "../config/db.js";
 
+const VALID_GAME_MODES = new Set(["friend", "random", "bot"]);
+
 export default class Game {
-  static async create({ player_white_id, player_black_id, mode = "p2p_random" }) {
+  static normalizeMode(mode) {
+    if (mode && VALID_GAME_MODES.has(mode)) {
+      return mode;
+    }
+    return "random";
+  }
+
+  static async create({ player_white_id, player_black_id = null, mode = "random" }) {
+    const normalizedMode = this.normalizeMode(mode);
     const [result] = await db
       .promise()
       .query(
         "INSERT INTO games (player_white_id, player_black_id, mode, status) VALUES (?, ?, ?, 'waiting')",
-        [player_white_id, player_black_id, mode]
+        [player_white_id, player_black_id, normalizedMode]
       );
-    return { id: result.insertId, player_white_id, player_black_id, mode, status: "waiting" };
+    return {
+      id: result.insertId,
+      player_white_id,
+      player_black_id,
+      mode: normalizedMode,
+      status: "waiting",
+    };
   }
 
   static async updateStatus(id, status) {

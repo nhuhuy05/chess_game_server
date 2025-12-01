@@ -12,17 +12,16 @@ export default class Token {
   }
 
   static async findByToken(refresh_token) {
-    const [rows] = await db.promise().query(
-      "SELECT * FROM tokens WHERE refresh_token = ?",
-      [refresh_token]
-    );
+    const [rows] = await db
+      .promise()
+      .query("SELECT * FROM tokens WHERE refresh_token = ?", [refresh_token]);
     return rows[0];
   }
 
   static async delete(refresh_token) {
-    await db.promise().query("DELETE FROM tokens WHERE refresh_token = ?", [
-      refresh_token,
-    ]);
+    await db
+      .promise()
+      .query("DELETE FROM tokens WHERE refresh_token = ?", [refresh_token]);
   }
 
   static async deleteByUser(user_id) {

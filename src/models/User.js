@@ -1,59 +1,106 @@
 import db from "../config/db.js";
 
+const MUTABLE_COLUMNS = [
+  "display_name",
+  "email",
+  "phone",
+  "avatar",
+  "role",
+  "status",
+  "is_active",
+  "password",
+];
+
 export default class User {
-  // Lấy toàn bộ user
   static async findAll() {
     const [rows] = await db.promise().query("SELECT * FROM users");
     return rows;
   }
 
-  // Tìm user theo id
   static async findById(id) {
-    const [rows] = await db.promise().query("SELECT * FROM users WHERE id = ?", [id]);
-    return rows[0];
-  }
-
-  // Tìm user theo username (phục vụ đăng nhập)
-  static async findByUsername(username) {
-    const [rows] = await db.promise().query("SELECT * FROM users WHERE username = ?", [username]);
-    return rows[0];
-  }
-
-    // Tìm user theo email(check trùng email)
-  static async findByEmail(email) {
-    const [rows] = await db.promise().query("SELECT * FROM users WHERE email = ?", [email]);
-    return rows[0];
-  }
-
-  // Tạo tài khoản mới
-  static async create({ username, password, display_name, email, phone, avatar }) {
-    const [result] = await db
+    const [rows] = await db
       .promise()
-      .query(
-        "INSERT INTO users (username, password, display_name, email, phone, avatar) VALUES (?, ?, ?, ?, ?, ?)",
-        [username, password, display_name, email, phone, avatar]
-      );
-    return { id: result.insertId, username, display_name, email, phone, avatar };
+      .query("SELECT * FROM users WHERE id = ?", [id]);
+    return rows[0];
   }
 
-  // Cập nhật thông tin người dùng
-  static async update(id, { display_name, email, phone, avatar }) {
+  static async findByUsername(username) {
+    const [rows] = await db
+      .promise()
+      .query("SELECT * FROM users WHERE username = ?", [username]);
+    return rows[0];
+  }
+
+  static async findByEmail(email) {
+    const [rows] = await db
+      .promise()
+      .query("SELECT * FROM users WHERE email = ?", [email]);
+    return rows[0];
+  }
+
+  static async create({
+    username,
+    password,
+    display_name,
+    email,
+    phone = null,
+    avatar = null,
+    role = "user",
+    status = "offline",
+    is_active = true,
+  }) {
+    const [result] = await db.promise().query(
+      `INSERT INTO users
+        (username, password, display_name, email, phone, avatar, role, status, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        username,
+        password,
+        display_name,
+        email,
+        phone,
+        avatar,
+        role,
+        status,
+        is_active,
+      ]
+    );
+    return this.findById(result.insertId);
+  }
+
+  static async update(id, fields = {}) {
+    const entries = Object.entries(fields).filter(
+      ([column, value]) =>
+        MUTABLE_COLUMNS.includes(column) && value !== undefined
+    );
+
+    if (entries.length === 0) {
+      return this.findById(id);
+    }
+
+    const assignments = entries.map(([column]) => `${column}=?`).join(", ");
+    const values = entries.map(([, value]) => value);
+    values.push(id);
+
     await db
       .promise()
-      .query(
-        "UPDATE users SET display_name=?, email=?, phone=?, avatar=? WHERE id=?",
-        [display_name, email, phone, avatar, id]
-      );
+      .query(`UPDATE users SET ${assignments} WHERE id=?`, values);
     return this.findById(id);
   }
 
-  // Cập nhật mật khẩu (dùng khi đổi pass hoặc reset)
   static async updatePassword(id, hashedPassword) {
-    await db.promise().query("UPDATE users SET password=? WHERE id=?", [hashedPassword, id]);
+    await this.update(id, { password: hashedPassword });
     return { message: "Password updated successfully" };
   }
 
-  // Xóa user
+  static async updateStatus(id, status) {
+    return this.update(id, { status });
+  }
+
+  static async updateActiveState(id, is_active) {
+    return this.update(id, { is_active });
+  }
+
   static async delete(id) {
     await db.promise().query("DELETE FROM users WHERE id=?", [id]);
     return { message: "User deleted successfully" };
