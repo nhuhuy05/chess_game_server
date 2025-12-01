@@ -108,6 +108,7 @@ export const signOut = async (req, res) => {
 
     const storedToken = await Token.findByToken(token);
 
+
     if (storedToken) {
       await Token.delete(token);
       await User.updateStatus(storedToken.user_id, "offline");
