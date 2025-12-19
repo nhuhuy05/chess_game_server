@@ -61,4 +61,39 @@ export default class Friendship {
         [user_id, friend_id, friend_id, user_id]
       );
   }
+
+  static async getPendingRequests(addressee_id) {
+    const [rows] = await db.promise().query(
+      `SELECT f.id, f.requester_id, f.created_at,
+              u.username, u.display_name, u.avatar
+       FROM friendships f
+       JOIN users u ON u.id = f.requester_id
+       WHERE f.addressee_id=? AND f.status='pending'
+       ORDER BY f.created_at DESC`,
+      [addressee_id]
+    );
+    return rows;
+  }
+
+  static async getFriendshipStatus(user_id, other_user_id) {
+    const [rows] = await db.promise().query(
+      `SELECT status, requester_id, addressee_id
+       FROM friendships
+       WHERE (requester_id=? AND addressee_id=?)
+          OR (requester_id=? AND addressee_id=?)`,
+      [user_id, other_user_id, other_user_id, user_id]
+    );
+    return rows[0] || null;
+  }
+
+  static async checkIfFriends(user_id, friend_id) {
+    const [rows] = await db.promise().query(
+      `SELECT 1 FROM friendships
+       WHERE ((requester_id=? AND addressee_id=?)
+          OR (requester_id=? AND addressee_id=?))
+       AND status='accepted'`,
+      [user_id, friend_id, friend_id, user_id]
+    );
+    return rows.length > 0;
+  }
 }

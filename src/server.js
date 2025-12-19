@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import authRoute from "./routes/authRoute.js";
 import gameRoute from "./routes/gameRoute.js";
 import userRoute from "./routes/userRoute.js";
+import friendRoute from "./routes/friendRoute.js";
 import { protectedRoute } from "./middlewares/authMiddleware.js";
 
 dotenv.config();
@@ -21,6 +22,7 @@ app.use(protectedRoute);
 app.use("/api/matchmaking", gameRoute);
 app.use("/api/games", gameRoute);
 app.use("/api/users", userRoute);
+app.use("/api/friends", friendRoute);
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}: http://localhost:${PORT}`);

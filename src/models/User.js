@@ -105,4 +105,20 @@ export default class User {
     await db.promise().query("DELETE FROM users WHERE id=?", [id]);
     return { message: "User deleted successfully" };
   }
+
+  static async searchByUsernameOrDisplayName(searchTerm, excludeUserId = null) {
+    const searchPattern = `%${searchTerm}%`;
+    let query = `SELECT id, username, display_name, avatar, status 
+                 FROM users 
+                 WHERE (username LIKE ? OR display_name LIKE ?) 
+                 AND id != COALESCE(?, -1) 
+                 AND is_active = TRUE
+                 LIMIT 20`;
+    const params = excludeUserId 
+      ? [searchPattern, searchPattern, excludeUserId]
+      : [searchPattern, searchPattern, null];
+    
+    const [rows] = await db.promise().query(query, params);
+    return rows;
+  }
 }
