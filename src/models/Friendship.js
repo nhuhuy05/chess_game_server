@@ -2,13 +2,32 @@ import db from "../config/db.js";
 
 export default class Friendship {
   static async sendRequest(requester_id, addressee_id) {
+    // Kiểm tra xem đã có friendship nào giữa hai người này chưa (cả hai chiều)
     const [exists] = await db
       .promise()
       .query(
-        "SELECT * FROM friendships WHERE requester_id=? AND addressee_id=?",
-        [requester_id, addressee_id]
+        `SELECT * FROM friendships 
+         WHERE (requester_id=? AND addressee_id=?)
+            OR (requester_id=? AND addressee_id=?)`,
+        [requester_id, addressee_id, addressee_id, requester_id]
       );
-    if (exists.length > 0) return null;
+    
+    // Nếu đã có record với status pending hoặc accepted, không cho phép gửi lại
+    if (exists.length > 0) {
+      const existing = exists[0];
+      if (existing.status === 'pending' || existing.status === 'accepted') {
+        return null;
+      }
+      // Nếu status là declined, xóa record cũ và tạo mới
+      if (existing.status === 'declined') {
+        await db.promise().query(
+          `DELETE FROM friendships 
+           WHERE (requester_id=? AND addressee_id=?)
+              OR (requester_id=? AND addressee_id=?)`,
+          [requester_id, addressee_id, addressee_id, requester_id]
+        );
+      }
+    }
 
     const [result] = await db
       .promise()

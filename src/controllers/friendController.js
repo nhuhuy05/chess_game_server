@@ -47,15 +47,22 @@ export const sendFriendRequest = async (req, res) => {
       return res.status(400).json({ message: "Đã là bạn bè" });
     }
 
-    // Kiểm tra đã có lời mời chưa
+    // Kiểm tra đã có lời mời chưa (cả hai chiều)
     const existing = await Friendship.getFriendshipStatus(requesterId, addressee_id);
     if (existing) {
       if (existing.status === "pending") {
+        // Nếu người kia đã gửi lời mời cho mình, tự động chấp nhận
+        if (existing.addressee_id === requesterId && existing.requester_id === addressee_id) {
+          await Friendship.acceptRequest(addressee_id, requesterId);
+          return res.status(200).json({ message: "Đã tự động chấp nhận lời mời kết bạn" });
+        }
+        // Nếu mình đã gửi lời mời trước đó
         return res.status(400).json({ message: "Đã gửi lời mời kết bạn" });
       }
       if (existing.status === "accepted") {
         return res.status(400).json({ message: "Đã là bạn bè" });
       }
+      // Nếu status là "declined", cho phép gửi lại
     }
 
     const result = await Friendship.sendRequest(requesterId, addressee_id);
