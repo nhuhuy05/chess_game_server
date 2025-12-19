@@ -1,8 +1,9 @@
 import bcrypt from "bcrypt";
 import User from "../models/User.js";
 import Token from "../models/Token.js";
+import Ranking from "../models/Ranking.js";
 
-// Lấy thông tin profile của user hiện tại
+// Lấy thông tin profile của user hiện tại (kèm ranking)
 export const getProfile = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -12,8 +13,25 @@ export const getProfile = async (req, res) => {
       return res.status(404).json({ message: "Người dùng không tồn tại" });
     }
 
+    // Lấy ranking
+    let ranking = await Ranking.findByUserId(userId);
+    if (!ranking) {
+      // Tạo ranking mặc định nếu chưa có
+      await Ranking.create(userId);
+      ranking = await Ranking.findByUserId(userId);
+    }
+
     const { password, ...safeUser } = user;
-    return res.status(200).json(safeUser);
+    return res.status(200).json({
+      ...safeUser,
+      ranking: ranking || {
+        games_played: 0,
+        wins: 0,
+        losses: 0,
+        draws: 0,
+        score: 0,
+      },
+    });
   } catch (error) {
     console.error("Lỗi khi lấy profile:", error.message);
     return res.status(500).json({ message: "Lỗi hệ thống" });
