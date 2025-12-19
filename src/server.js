@@ -5,6 +5,7 @@ import authRoute from "./routes/authRoute.js";
 import gameRoute from "./routes/gameRoute.js";
 import userRoute from "./routes/userRoute.js";
 import friendRoute from "./routes/friendRoute.js";
+import leaderboardRoute from "./routes/leaderboardRoute.js";
 import { protectedRoute } from "./middlewares/authMiddleware.js";
 
 dotenv.config();
@@ -23,6 +24,7 @@ app.use("/api/matchmaking", gameRoute);
 app.use("/api/games", gameRoute);
 app.use("/api/users", userRoute);
 app.use("/api/friends", friendRoute);
+app.use("/api/leaderboard", leaderboardRoute);
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}: http://localhost:${PORT}`);
