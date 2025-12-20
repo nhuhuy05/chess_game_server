@@ -40,6 +40,11 @@ export default class Game {
       ]);
   }
 
+  static async findAll() {
+    const [rows] = await db.promise().query("SELECT * FROM games");
+    return rows;
+  }
+
   static async findById(id) {
     const [rows] = await db.promise().query("SELECT * FROM games WHERE id=?", [id]);
     return rows[0];
