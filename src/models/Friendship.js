@@ -59,7 +59,7 @@ export default class Friendship {
 
   static async getFriends(user_id) {
     const [rows] = await db.promise().query(
-      `SELECT u.id, u.username, u.display_name, u.avatar
+      `SELECT u.id, u.username, u.display_name, u.avatar, u.status
        FROM friendships f
        JOIN users u
          ON (u.id = f.addressee_id AND f.requester_id = ?)

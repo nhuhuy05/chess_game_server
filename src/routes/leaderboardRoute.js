@@ -11,3 +11,8 @@ router.get("/", protectedRoute, getLeaderboard);
 export default router;
 
 
+
+
+
+
+
