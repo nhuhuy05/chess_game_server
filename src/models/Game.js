@@ -40,6 +40,34 @@ export default class Game {
       ]);
   }
 
+  /**
+   * Mark game finished with winner, only if it is not already finished.
+   * Returns true if the update happened, false otherwise.
+   */
+  static async setWinnerIfNotFinished(id, winner_id) {
+    const [result] = await db
+      .promise()
+      .query(
+        "UPDATE games SET status='finished', winner_id=?, ended_at=NOW() WHERE id=? AND status<>'finished'",
+        [winner_id, id]
+      );
+    return result.affectedRows > 0;
+  }
+
+  /**
+   * Mark game finished as draw, only if it is not already finished.
+   * Returns true if the update happened, false otherwise.
+   */
+  static async markDrawIfNotFinished(id) {
+    const [result] = await db
+      .promise()
+      .query(
+        "UPDATE games SET status='finished', ended_at=NOW() WHERE id=? AND status<>'finished'",
+        [id]
+      );
+    return result.affectedRows > 0;
+  }
+
   static async findAll() {
     const [rows] = await db.promise().query("SELECT * FROM games");
     return rows;

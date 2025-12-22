@@ -2,12 +2,12 @@ import User from "../models/User.js";
 import Game from "../models/Game.js";
 import Ranking from "../models/Ranking.js";
 
-// Hàng đợi ghép trận trong bộ nhớ
-// Key: userId, Value: thông tin cơ bản của người chơi (kèm IP/port để P2P)
+// Matchmaking queue stored in memory
+// Key: userId, Value: basic player info (with IP/port for P2P)
 const matchmakingQueue = new Map();
 
-// Lưu tạm thông tin P2P sau khi đã ghép để client khác (người vào hàng đợi trước)
-// có thể lấy qua /status. Key: userId, Value: { gameId, color, opponent: { ... } }
+// Temporary P2P info after a match is created, retrievable via /status
+// Key: userId, Value: { gameId, color, opponent: { ... }, playerRating }
 const p2pInfoByUser = new Map();
 
 // POST /api/matchmaking/join
@@ -36,12 +36,12 @@ export const joinMatchmaking = async (req, res) => {
       return res.status(404).json({ message: "Người dùng không tồn tại" });
     }
 
-    // Nếu đã trong hàng đợi thì chỉ báo vẫn đang chờ
+    // Đã ở trong hàng đợi
     if (matchmakingQueue.has(userId)) {
       return res.status(202).json({ message: "Đang tìm trận đấu..." });
     }
 
-    // Thêm người chơi vào hàng đợi
+    // Thêm vào hàng đợi
     const player = {
       id: userId,
       username: user.username,
@@ -54,18 +54,17 @@ export const joinMatchmaking = async (req, res) => {
       `User ${user.username} joined queue. Size: ${matchmakingQueue.size}`
     );
 
-    // Nếu chưa đủ 2 người thì tiếp tục chờ
+    // Chưa đủ 2 người
     if (matchmakingQueue.size < 2) {
       return res.status(202).json({ message: "Đang tìm trận đấu..." });
     }
 
-    // Lấy 2 người chơi đầu tiên trong hàng đợi (ghép ngẫu nhiên màu cờ)
+    // Lấy 2 người đầu hàng đợi
     const iterator = matchmakingQueue.entries();
     const first = iterator.next().value;
     const second = iterator.next().value;
 
     if (!first || !second) {
-      // Trường hợp hiếm khi một người rời hàng đợi giữa lúc xử lý
       return res
         .status(202)
         .json({ message: "Đang tìm trận đấu...", note: "Chờ thêm người chơi" });
@@ -80,7 +79,7 @@ export const joinMatchmaking = async (req, res) => {
     const [whitePlayer, blackPlayer] =
       Math.random() < 0.5 ? [player1, player2] : [player2, player1];
 
-    // Tạo bản ghi game trong DB, mode cố định 'random'
+    // Tạo bản ghi game trong DB, mode mặc định random
     const newGame = await Game.create({
       player_white_id: whitePlayer.id,
       player_black_id: blackPlayer.id,
@@ -100,7 +99,7 @@ export const joinMatchmaking = async (req, res) => {
       blackRanking = await Ranking.findByUserId(blackPlayer.id);
     }
 
-    // Lưu thông tin P2P cho cả hai người chơi để client có thể lấy qua /status
+    // Lưu thông tin P2P cho hai người chơi để client lấy qua /status
     p2pInfoByUser.set(whitePlayer.id, {
       gameId: newGame.id,
       color: "white",
@@ -129,7 +128,7 @@ export const joinMatchmaking = async (req, res) => {
       playerRating: blackRanking?.score || 0,
     });
 
-    // Xác định người gọi API là bên nào để trả về màu + P2P đúng
+    // Trả về info của người gọi API
     const selfInfo = p2pInfoByUser.get(userId);
 
     return res.status(200).json({
@@ -155,10 +154,10 @@ export const checkMatchStatus = async (req, res) => {
   }
 
   try {
-    // Nếu đã có thông tin P2P được lưu sẵn (đã ghép xong)
+    // Có sẵn P2P info (đã ghép xong)
     if (p2pInfoByUser.has(userId)) {
       const info = p2pInfoByUser.get(userId);
-      // Có thể xóa sau khi client đã lấy để tránh rò rỉ bộ nhớ
+      // Xóa sau khi trả về để tránh rác bộ nhớ
       p2pInfoByUser.delete(userId);
 
       return res.status(200).json({
@@ -170,12 +169,12 @@ export const checkMatchStatus = async (req, res) => {
       });
     }
 
-    // Chưa ghép xong nhưng vẫn đang trong hàng đợi
+    // Đang trong hàng đợi
     if (matchmakingQueue.has(userId)) {
       return res.status(202).json({ message: "Đang tìm trận đấu..." });
     }
 
-    // Không có trong hàng đợi và cũng không có thông tin P2P
+    // Không ở hàng đợi và không có thông tin P2P
     return res
       .status(404)
       .json({ message: "Không tìm thấy yêu cầu tìm trận đấu" });
@@ -220,14 +219,14 @@ export const endGame = async (req, res) => {
       return res.status(404).json({ message: "Trận đấu không tồn tại" });
     }
 
-    // Kiểm tra người chơi có tham gia trận đấu này không
+    // Người gọi phải là người tham gia trận
     if (game.player_white_id !== userId && game.player_black_id !== userId) {
       return res
         .status(403)
         .json({ message: "Bạn không tham gia trận đấu này" });
     }
 
-    // Kiểm tra trận đấu đã kết thúc chưa
+    // Đã kết thúc rồi
     if (game.status === "finished") {
       return res.status(400).json({ message: "Trận đấu đã kết thúc" });
     }
@@ -240,7 +239,6 @@ export const endGame = async (req, res) => {
     let blackResult = "draw";
 
     if (result === "draw") {
-      // Hòa
       whiteResult = "draw";
       blackResult = "draw";
     } else if (winnerColor === "white") {
@@ -253,15 +251,22 @@ export const endGame = async (req, res) => {
       blackResult = "win";
     }
 
-    // Cập nhật game
+    // Cập nhật game theo cách idempotent (nhiều client gọi song song chỉ tính 1)
+    let updated = false;
     if (winnerId) {
-      await Game.setWinner(gameId, winnerId);
+      updated = await Game.setWinnerIfNotFinished(gameId, winnerId);
     } else {
-      await Game.updateStatus(gameId, "finished");
+      updated = await Game.markDrawIfNotFinished(gameId);
     }
 
-    // Cập nhật ranking cho cả hai người chơi
-    // Đảm bảo ranking tồn tại
+    // Nếu trận đã kết thúc trước đó, bỏ qua ranking (tránh nhân đôi)
+    if (!updated) {
+      return res
+        .status(409)
+        .json({ message: "Trận đấu đã được kết thúc trước đó" });
+    }
+
+    // Cập nhật ranking cho hai người chơi (đảm bảo tồn tại)
     let whiteRanking = await Ranking.findByUserId(game.player_white_id);
     if (!whiteRanking) {
       await Ranking.create(game.player_white_id);
