@@ -10,7 +10,11 @@ export default class Game {
     return "random";
   }
 
-  static async create({ player_white_id, player_black_id = null, mode = "random" }) {
+  static async create({
+    player_white_id,
+    player_black_id = null,
+    mode = "random",
+  }) {
     const normalizedMode = this.normalizeMode(mode);
     const [result] = await db
       .promise()
@@ -28,58 +32,59 @@ export default class Game {
   }
 
   static async updateStatus(id, status) {
-    await db.promise().query("UPDATE games SET status=? WHERE id=?", [status, id]);
+    await db
+      .promise()
+      .query("UPDATE games SET status=? WHERE id=?", [status, id]);
   }
 
   static async setWinner(id, winner_id) {
     await db
       .promise()
-      .query("UPDATE games SET status='finished', winner_id=?, ended_at=NOW() WHERE id=?", [
-        winner_id,
-        id,
-      ]);
+      .query(
+        "UPDATE games SET status='finished', winner_id=?, ended_at=NOW() WHERE id=?",
+        [winner_id, id]
+      );
   }
 
   /**
-   * Mark game finished with winner, only if it is not already finished.
-   * Returns true if the update happened, false otherwise.
+   * Cập nhật winner chỉ khi game chưa finished (idempotent)
+   * @returns {Promise<boolean>} true nếu đã cập nhật, false nếu game đã finished
    */
   static async setWinnerIfNotFinished(id, winner_id) {
     const [result] = await db
       .promise()
       .query(
-        "UPDATE games SET status='finished', winner_id=?, ended_at=NOW() WHERE id=? AND status<>'finished'",
+        "UPDATE games SET status='finished', winner_id=?, ended_at=NOW() WHERE id=? AND status != 'finished'",
         [winner_id, id]
       );
     return result.affectedRows > 0;
   }
 
   /**
-   * Mark game finished as draw, only if it is not already finished.
-   * Returns true if the update happened, false otherwise.
+   * Đánh dấu hòa chỉ khi game chưa finished (idempotent)
+   * @returns {Promise<boolean>} true nếu đã cập nhật, false nếu game đã finished
    */
   static async markDrawIfNotFinished(id) {
     const [result] = await db
       .promise()
       .query(
-        "UPDATE games SET status='finished', ended_at=NOW() WHERE id=? AND status<>'finished'",
+        "UPDATE games SET status='finished', winner_id=NULL, ended_at=NOW() WHERE id=? AND status != 'finished'",
         [id]
       );
     return result.affectedRows > 0;
   }
 
-  static async findAll() {
-    const [rows] = await db.promise().query("SELECT * FROM games");
-    return rows;
-  }
-
   static async findById(id) {
-    const [rows] = await db.promise().query("SELECT * FROM games WHERE id=?", [id]);
+    const [rows] = await db
+      .promise()
+      .query("SELECT * FROM games WHERE id=?", [id]);
     return rows[0];
   }
 
   static async getOngoingGames() {
-    const [rows] = await db.promise().query("SELECT * FROM games WHERE status='playing'");
+    const [rows] = await db
+      .promise()
+      .query("SELECT * FROM games WHERE status='playing'");
     return rows;
   }
 
